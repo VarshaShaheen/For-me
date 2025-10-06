@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>To‑Do — Minimal Notion‑style</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#f6f7f9;
+      --card:#ffffff;
+      --text:#111827;
+      --muted:#6b7280;
+      --ring:#2563eb22;
+      --accent:#2563eb;
+      --border:#e5e7eb;
+      --shadow: 0 10px 30px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.06);
+      --radius: 16px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background:var(--bg); color:var(--text); font-family:Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+    }
+    .wrap{ max-width: 740px; margin: 48px auto; padding: 0 20px; }
+    .board{
+      background:var(--card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow);
+      overflow:hidden;
+    }
+    .hdr{
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+      padding:20px 22px; border-bottom:1px solid var(--border);
+      position:sticky; top:0; background:var(--card); z-index:3;
+    }
+    .title{ font-weight:700; letter-spacing:-0.01em; }
+    .actions{ display:flex; gap:10px; align-items:center; }
+    .btn{ appearance:none; border:1px solid var(--border); background:#fff; color:#111827; padding:10px 14px; border-radius:12px; font-weight:600; cursor:pointer; box-shadow:0 1px 0 rgba(0,0,0,.02);}
+    .btn:hover{ border-color:#d1d5db; }
+    .btn.primary{ background:var(--accent); color:white; border-color:transparent; }
+    .btn.primary:hover{ filter:brightness(.95); }
+
+    .task-list{ list-style:none; margin:0; padding: 8px; }
+    .row{ display:grid; grid-template-columns: 28px 1fr 32px; align-items:center; gap:10px; padding: 10px 14px; border-radius:12px; }
+    .row:hover{ background:#f8fafc; }
+
+    .checkbox{ width:18px; height:18px; border:2px solid #c7cdd9; border-radius:6px; display:inline-grid; place-items:center; cursor:pointer; transition: all .15s ease; }
+    .checkbox[data-checked="true"]{ background:var(--accent); border-color:var(--accent); }
+    .checkbox svg{ width:14px; height:14px; opacity:0; transition:opacity .15s ease; color:white; }
+    .checkbox[data-checked="true"] svg{ opacity:1; }
+
+    .text{ outline:none; border:none; padding:8px 2px; border-radius:8px; min-height:30px; line-height:1.6; }
+    .text:focus{ box-shadow: 0 0 0 6px var(--ring); background:white; }
+    .text.placeholder{ color:#9aa0aa }
+
+    .done .text{ color:var(--muted); text-decoration:line-through; }
+    .ghost{ opacity:.6 }
+
+    .empty{ padding:28px; text-align:center; color:var(--muted); border-top:1px dashed var(--border); }
+
+    .footer{ display:flex; justify-content:space-between; align-items:center; gap:12px; padding:16px 22px; border-top:1px solid var(--border); color:var(--muted); font-size:14px; }
+    .kbd{ font: 600 12px/1 Inter, sans-serif; border:1px solid var(--border); background:#f3f4f6; padding:4px 6px; border-radius:6px; color:#374151 }
+
+    /* Narrow */
+    @media (max-width:560px){ .row{ grid-template-columns: 26px 1fr 0px; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="board" id="board">
+      <header class="hdr">
+        <div class="title">🗒️ To‑Do</div>
+        <div class="actions">
+          <button class="btn" id="clearDoneBtn" title="Remove completed tasks">Clear completed</button>
+          <button class="btn primary" id="addBtn" title="Add a new task (Enter also works)">Add task</button>
+        </div>
+      </header>
+
+      <ul class="task-list" id="list" aria-live="polite"></ul>
+
+      <div class="empty" id="emptyState" hidden>
+        No tasks yet. Press <span class="kbd">Enter</span> to add a new line, or click <b>Add task</b>.
+      </div>
+
+      <footer class="footer">
+        <div><span id="countOpen">0</span> open • <span id="countDone">0</span> done</div>
+        <div>Tips: <span class="kbd">Enter</span> new task · <span class="kbd">Backspace</span> on empty to delete</div>
+      </footer>
+    </div>
+  </div>
+
+  <template id="rowTemplate">
+    <li class="row" data-id="">
+      <button class="checkbox" aria-pressed="false" aria-label="Toggle done" data-checked="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </button>
+      <div class="text" contenteditable="true" role="textbox" aria-multiline="false" spellcheck="false"></div>
+      <div></div>
+    </li>
+  </template>
+
+  <script>
+  (function(){
+    const listEl = document.getElementById('list');
+    const rowTpl = document.getElementById('rowTemplate');
+    const addBtn = document.getElementById('addBtn');
+    const clearDoneBtn = document.getElementById('clearDoneBtn');
+    const emptyState = document.getElementById('emptyState');
+    const countOpen = document.getElementById('countOpen');
+    const countDone = document.getElementById('countDone');
+
+    const STORAGE_KEY = 'notio.todo.v1';
+    let tasks = load() || [];
+
+    function uid(){ return Math.random().toString(36).slice(2,10) + Date.now().toString(36); }
+
+    function load(){ try{ return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }catch{ return []; } }
+    function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks)); }
+
+    function sortTasks(){
+      // Incomplete first, maintain original relative order via createdAt
+      tasks.sort((a,b)=> (a.done===b.done) ? (a.order - b.order) : (a.done?1:-1));
+    }
+
+    function render(){
+      sortTasks();
+      listEl.innerHTML='';
+      let open=0, done=0;
+      tasks.forEach(t=>{
+        const li = rowTpl.content.firstElementChild.cloneNode(true);
+        li.dataset.id = t.id;
+        const cb = li.querySelector('.checkbox');
+        const tx = li.querySelector('.text');
+        cb.dataset.checked = String(!!t.done);
+        cb.setAttribute('aria-pressed', String(!!t.done));
+        tx.textContent = t.text || '';
+        if(t.done){ li.classList.add('done'); done++; } else { open++; }
+        listEl.appendChild(li);
+      });
+      emptyState.hidden = tasks.length !== 0;
+      countOpen.textContent = open;
+      countDone.textContent = done;
+      save();
+    }
+
+    function addTask(text='', afterId=null){
+      const baseOrder = tasks.length? Math.max(...tasks.map(t=>t.order)) + 1 : 1;
+      const t = { id: uid(), text: text.trim(), done:false, order: baseOrder };
+      if(afterId){
+        // insert after a specific id but still keep open tasks section on top
+        const idx = tasks.findIndex(x=>x.id===afterId);
+        if(idx>=0){ tasks.splice(idx+1,0,t); // reassign sequential order
+          tasks = tasks.map((x,i)=>({...x, order:i+1}));
+        } else { tasks.push(t); }
+      } else {
+        tasks.push(t);
+      }
+      render();
+      focusTask(t.id);
+    }
+
+    function focusTask(id){
+      const el = listEl.querySelector(`[data-id="${id}"] .text`);
+      if(el){
+        // move caret to end
+        const range = document.createRange();
+        range.selectNodeContents(el); range.collapse(false);
+        const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+        el.focus();
+      }
+    }
+
+    function deleteTask(id){
+      const idx = tasks.findIndex(t=>t.id===id);
+      if(idx<0) return;
+      // Focus previous editable if exists
+      const prev = tasks[idx-1]?.id || tasks[idx+1]?.id;
+      tasks.splice(idx,1);
+      render();
+      if(prev) focusTask(prev);
+    }
+
+    // Event delegation: checkbox toggle
+    listEl.addEventListener('click', (e)=>{
+      const cb = e.target.closest('.checkbox');
+      if(!cb) return;
+      const li = cb.closest('.row');
+      const id = li.dataset.id;
+      const t = tasks.find(x=>x.id===id);
+      if(!t) return;
+      t.done = !t.done;
+      render();
+      // Keep focus on same item after re-render
+      focusTask(id);
+    });
+
+    // Text editing, Enter to create next, Backspace on empty to delete
+    listEl.addEventListener('keydown', (e)=>{
+      const tx = e.target.closest('.text'); if(!tx) return;
+      const li = tx.closest('.row'); const id = li.dataset.id; const t = tasks.find(x=>x.id===id);
+      if(e.key==='Enter'){
+        e.preventDefault();
+        // Add a new task right after current line
+        addTask('', id);
+      } else if(e.key==='Backspace'){
+        const text = (tx.textContent||'').trim();
+        const isEmpty = text.length===0;
+        // If empty and caret at start, delete this row
+        const sel = window.getSelection();
+        if(isEmpty && sel.anchorOffset===0){ e.preventDefault(); deleteTask(id); }
+      }
+    });
+
+    listEl.addEventListener('input', (e)=>{
+      const tx = e.target.closest('.text'); if(!tx) return;
+      const li = tx.closest('.row'); const id = li.dataset.id; const t = tasks.find(x=>x.id===id);
+      if(!t) return; t.text = tx.textContent; save();
+    });
+
+    // Paste plain text only
+    listEl.addEventListener('paste', (e)=>{
+      const tx = e.target.closest('.text'); if(!tx) return;
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData).getData('text');
+      document.execCommand('insertText', false, text);
+    });
+
+    // Buttons
+    addBtn.addEventListener('click', ()=> addTask(''));
+    clearDoneBtn.addEventListener('click', ()=>{ tasks = tasks.filter(t=>!t.done); render(); });
+
+    // Initial render; seed with one empty line if none
+    if(tasks.length===0){ addTask(''); } else { render(); }
+  })();
+  </script>
+</body>
+</html>
