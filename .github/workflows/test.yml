@@ -1,0 +1,36 @@
+name: CI Demo            # 1. A friendly name
+
+on:                      # 2. When should it run?
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:                    # 3. What should it do?
+  build-and-test:        # Job ID (any name)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run tests
+        run: echo "Here I would run tests"
+
+
+#on:
+#Triggers: when should this workflow start?
+#Common ones:
+#push (code pushed to repo)
+#pull_request
+#workflow_dispatch (manual run button)
+#schedule (cron)
+#jobs:
+#A workflow can have one or more jobs.
+#Each job runs on a separate virtual machine (runs-on).
+#Jobs can run in parallel or depend on each other.
+#steps:
+#The actual commands.
+#Each step is either:
+#uses: another action (reusable code from Marketplace)
+#run: shell commands
